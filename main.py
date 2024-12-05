@@ -9,6 +9,13 @@ english_abc = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 
        'w', 'x', 'y', 'z', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R',
        'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z']
 
+bad_lines = ['מנהל הוועדה:', 'רשמת פרלמנטרית:', 'מוזמנים באמצעים מקוונים:', 'חברי כנסת:', 'יועצת משפטית:',
+                 'מנהל/ת הוועדה:', 'חברי הוועדה:', 'חברי הכנסת:', 'משתתפים באמצעים מקוונים:', 'מנהלת הוועדה:',
+                 'סדר היום:', 'משתתפים (באמצעים מקוונים):', 'רישום פרלמנטרי:',
+                 ' החדשים בנוגע לחפירות בהר הבית – הצעה לסדר של חברי הכנסת:', 'יועץ משפטי:', 'קצרנית פרלמנטרית:',
+                 'קצרנית:', 'רצח הירקן בטירה ופעולות משטרת ישראלהיו"ר ש\' וייס:', '(23 בינואר 2008):', '(7 ביוני 2006)',
+                 'אי-אמון בממשלה בשל:', 'הצעות חוק:', 'רשמה וערכה:', 'סדר-היום:', 'נוכחים:', 'ייעוץ משפטי:', 'מוזמנים:',
+                 'נכחו:']
 
 lines=[]
 filenames_data={}
@@ -19,6 +26,9 @@ my_corp=[]
 curr_speaker=""
 curr_speaker_text=""
 speaker_flag=False
+
+tot_sent={}
+
 
 def extract_filename_data():
     for i in range(len(filenames)):
@@ -210,12 +220,12 @@ def extract_protocol_number(index,file_path):
 def turn_text_to_sentences(text):
     output=[]
     start_idx=0
-    endings = ['.' , '!' , '?' , '\n' , ';' ]
+    endings = ['.' , '!' , '?' , '\n' , ';' , '\t']
     #go through each character in the text
     for index,char in enumerate(text):
         #are we looking at an ending character?
         if char in endings:
-            if start_idx != i:
+            if start_idx != index:
                 #this case handles floating point numbers
                 if char=='.' and index+1<len(text) and text[index+1].isdigit():
                     continue
@@ -223,13 +233,13 @@ def turn_text_to_sentences(text):
                 if (index+1<len(text)) and (text[index+1] not in hebrew_abc) and (text[index+1]!=' ') and text[index+1]!='\n':
                     continue
 
+
                 #now we can extract the sentence
-                sentence=text[start_idx:i+1].strip()
+                sentence=text[start_idx:index+1].strip()
                 if (sentence and sentence !="\n"):
                     output.append(sentence)
             start_idx = index+1
     return output
-
 
 
 
@@ -249,7 +259,7 @@ extract_filename_data()
 #
 # print(f"total {count} bingos")
 # exit(0)
-
+sent_count=0
 for i in range(len(filenames)):
     curr_speaker_text=""
     curr_speaker=""
@@ -270,42 +280,88 @@ for i in range(len(filenames)):
             if((not check_bold(paragraph)) and check_underline(paragraph) and paragraph.text.endswith(':')):
 
                 #check the speaker is not a single word, would be error
-                if(len(paragraph.text.split(" "))<2):
-                    print("found one word as speaker: "+paragraph.text)
+                if(len(paragraph.text.split(" "))<2 or paragraph.text in bad_lines):
                     continue
 
                 #if next condition is true, means that we've already encounterd a speaker and we need to save all the text
                 #that the speaker said, and we need to seperate them into sentences
                 if(curr_speaker):
                    speaker_sentences=turn_text_to_sentences(curr_speaker_text)
-                   print(f"in {filenames[i]}, with this guy speaking: {curr_speaker}")
+                   print(f'------------------------\n '
+                         f'for speaker : {curr_speaker} in file: {filenames[i]}, sentences in paragraph: ')
                    for sentence in speaker_sentences:
                        #my_corp.append((protocol_name,knesset_number,prot_type,protocol_number,curr_speaker,sentence))
                        print(sentence)
-                   print("\n"+"-"*50+"\n")
+                       tot_sent[sentence]=filenames[i]
+                       sent_count+=1
                    curr_speaker_text=""
+                   print("-"*50+"\n")
                 #no else is needed cuz if we're looking at a speaker, this means that the former speaker
                 #has done talking.
                 curr_speaker=""
                 curr_speaker = extract_name(paragraph.text.strip()[:-1])
-                #print(curr_speaker)
 
             #if this condition is true, this means we're still on the same speaker and we need to
             #accumulate the text his taking.
             elif (not curr_speaker==""):
                     curr_speaker_text += paragraph.text
-
             else:
                 continue
 
 
         elif(not dealing_with_comittee): #not dealing with comittee so its plenary maybe
-            continue
+
+            #if the next condition is true, this means we're looking at a speaker
+            if(check_bold(paragraph) and check_underline(paragraph) and paragraph.text.endswith(':')):
+
+                #check the speaker is not a single word, would be error
+                if(len(paragraph.text.split(" "))<2 or paragraph.text in bad_lines):
+                    continue
+
+                #if next condition is true, means that we've already encounterd a speaker and we need to save all the text
+                #that the speaker said, and we need to seperate them into sentences
+                if(curr_speaker):
+                    speaker_sentences=turn_text_to_sentences(curr_speaker_text)
+                    print(f'------------------------\n '
+                          f'for speaker : {curr_speaker} in file: {filenames[i]}, sentences in paragraph: ')
+                    for sentence in speaker_sentences:
+                        #my_corp.append((protocol_name,knesset_number,prot_type,protocol_number,curr_speaker,sentence))
+                        print(sentence)
+                        tot_sent[sentence]=filenames[i]
+                        sent_count+=1
+                    curr_speaker_text=""
+                    print("-"*50+"\n")
+                #no else is needed cuz if we're looking at a speaker, this means that the former speaker
+                #has done talking.
+                curr_speaker=""
+                curr_speaker = extract_name(paragraph.text.strip()[:-1])
+
+            #if this condition is true, this means we're still on the same speaker and we need to
+            #accumulate the text his taking.
+            elif (not curr_speaker==""):
+                curr_speaker_text += paragraph.text
+            else:
+                continue
 
         else:
             print("go fk yerself")
+
+    curr_speaker=""
+    curr_speaker_text=""
     print ("\n"+"-"*30+"\n")
 
+print(f'total {sent_count} sentences counted\n number of sentences of size 3,2,1:\n{sum(1 for s in tot_sent if len(s.split(" ")) < 4)}')
+
+print(f'five shortest sentences: \n')
+for i,x in enumerate(sorted(tot_sent,key=len)[:100]):
+    print(i,x)
+    print(tot_sent[x],"\n")
+print("--"*40)
+print(f'five longest sentences: \n')
+for x in sorted(tot_sent,key=len)[-5:]:
+    print(x)
+    print(tot_sent[x],"\n")
+print("--"*40)
 
 # some_file=filenames[11]
 # file_path=os.path.join(directory,some_file)
