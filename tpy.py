@@ -1,81 +1,120 @@
-import os
+import json
 import re
-from docx import Document
 
-# Define the directory containing the .docx files
-directory = "TextFiles"
+# Conditions to test:
+# 1. Names with parentheses: Speaker names should not contain parentheses. If found, print a warning.
+# 2. Sentences shorter than 4 tokens: If fewer than 4 tokens, print a warning.
+# 3. Sentences containing English letters: If English letters appear, print a warning.
+# 4. Sentences containing only non-letter characters: If sentence has no Hebrew/English letters, print a warning.
+# 5. Sentences containing multiple sequential dashes ('-'): If '--' appears, print a warning.
 
-# Dictionary to map Hebrew numeral words to integers
-hebrew_word_to_num = {
-    "אחד": 1, "שניים": 2, "שלושה": 3, "ארבעה": 4, "חמישה": 5, "שישה": 6, "שבעה": 7, "שמונה": 8, "תשעה": 9,
-    "עשרה": 10, "עשרים": 20, "שלושים": 30, "ארבעים": 40, "חמישים": 50, "שישים": 60, "שבעים": 70, "שמונים": 80, "תשעים": 90,
-    "מאה": 100, "מאתיים": 200, "אלף": 1000, "אלפיים": 2000
-}
+ENG_CHARS = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+HEB_CHARS = set("אבגדהוזחטיכלמנסעפצקרשתץףךםן")
 
-def parse_hebrew_number(hebrew_text):
-    """Convert a Hebrew number phrase into an integer."""
+def check_speaker_name(name):
+    # Check if name contains parentheses after cleaning (shouldn't)
+    # If any parentheses remain, it means they weren't removed.
+    if '(' in name or ')' in name:
+        return "Name contains parentheses."
+    return None
+
+def check_sentence_length(sentence):
+    tokens = sentence.split()
+    if len(tokens) < 4:
+        return f"Sentence shorter than 4 tokens, it's len is: {len(tokens)}."
+    return None
+
+def check_english_characters(sentence):
+    if any(ch in ENG_CHARS for ch in sentence):
+        return "Sentence contains English letters."
+    return None
+
+def check_letters_presence(sentence):
+    # Check if sentence has at least one Hebrew or English letter
+    contains_hebrew = any(ch in HEB_CHARS for ch in sentence)
+    contains_english = any(ch in ENG_CHARS for ch in sentence)
+    if not (contains_hebrew or contains_english):
+        return "Sentence contains no Hebrew or English letters."
+    return None
+
+def check_multiple_dashes(sentence):
+    # Check for repeated dashes pattern
+    if re.search(r"((-|–)\s*){2,}", sentence):
+        return "Sentence contains multiple sequential dashes."
+    return None
+
+if __name__ == "__main__":
+    input_file = "result.jsonl"
     total = 0
-    multiplier = 1
-    for word in hebrew_text.split("-"):
-        word = word.strip()  # Remove leading/trailing spaces
-        if word in hebrew_word_to_num:
-            value = hebrew_word_to_num[word]
-            if value >= 100:  # Handle hundreds or thousands
-                multiplier = value
-            else:
-                total += value * multiplier
-        else:
-            continue  # Skip unknown words
-    return total
+    warnings_count = 0
 
-# Regular expressions to find protocol numbers
-regex_patterns = [
-    r"(?:פרוטוקול מס'|מספר הישיבה)\s*(\d+)",  # Regular numeric pattern
-    r"הישיבה ה-(.*?)(?:[\n ]|$)"             # Hebrew numeral pattern
-]
+    # Counters for each type of warning to summarize at the end
+    name_parentheses_count = 0
+    short_sentence_count = 0
+    english_count = 0
+    no_letters_count = 0
+    multi_dash_count = 0
 
-# Dictionary to store the results
-protocol_data = {}
-readable_count = 0
-total_files = 0
-first_five_unreadable = []  # List to store the first 5 occurrences of -1
+    with open(input_file, 'r', encoding='utf-8') as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            data = json.loads(line)
+            total += 1
 
-# Process each .docx file in the directory
-for file in os.listdir(directory):
-    if file.endswith(".docx"):  # Ensure it's a .docx file
-        total_files += 1
-        file_path = os.path.join(directory, file)
+            name = data.get("name_speaker", "")
+            sentence = data.get("text_sentence", "")
 
-        # Open and read the .docx file
-        doc = Document(file_path)
+            warnings = []
 
-        # Combine the first few paragraphs to search for protocol number
-        first_few_paragraphs = "\n".join([paragraph.text for paragraph in doc.paragraphs[:10]])
+            # Check each condition
+            w1 = check_speaker_name(name)
+            if w1:
+                warnings.append(w1)
 
-        # Initialize protocol number as not found (-1)
-        protocol_number = -1
+            w2 = check_sentence_length(sentence)
+            if w2:
+                warnings.append(w2)
 
-        # Search for protocol number using each pattern
-        for pattern in regex_patterns:
-            match = re.search(pattern, first_few_paragraphs)
-            if match:
-                if pattern == regex_patterns[0]:  # Numeric pattern
-                    protocol_number = int(match.group(1))
-                elif pattern == regex_patterns[1]:  # Hebrew numeral pattern
-                    hebrew_number = match.group(1)
-                    protocol_number = parse_hebrew_number(hebrew_number)
-                break  # Stop searching once a match is found
+            w3 = check_english_characters(sentence)
+            if w3:
+                warnings.append(w3)
 
-        # Store the result
-        protocol_data[file] = protocol_number
-        if protocol_number != -1:
-            readable_count += 1
-        elif len(first_five_unreadable) >-1:
-            first_five_unreadable.append((file, protocol_number))
+            w4 = check_letters_presence(sentence)
+            if w4:
+                warnings.append(w4)
 
-# Print the number of readable numbers and total files
-print(f"Readable Protocol Numbers: {readable_count} out of {total_files} files.")
+            w5 = check_multiple_dashes(sentence)
+            if w5:
+                warnings.append(w5)
 
-# Print the first 5 occurrences of -1
-for file, protocol_number in first_five_unreadable:
-    print(f"File: {file}, Protocol Number: {protocol_number}")
+            # Print warnings if any
+            if warnings:
+                warnings_count += len(warnings)
+                print(f"Entry from {data.get('name_protocol')} - Speaker: {name}")
+                print(f"Sentence: {sentence}")
+                for w in warnings:
+                    print("Warning:", w)
+                    # Tally each warning
+                    if w == "Name contains parentheses.":
+                        name_parentheses_count += 1
+                    elif w == "Sentence shorter than 4 tokens.":
+                        short_sentence_count += 1
+                    elif w == "Sentence contains English letters.":
+                        english_count += 1
+                    elif w == "Sentence contains no Hebrew or English letters.":
+                        no_letters_count += 1
+                    elif w == "Sentence contains multiple sequential dashes.":
+                        multi_dash_count += 1
+                print("-" * 50)
+
+    print("\n=== Summary ===")
+    print(f"Total entries checked: {total}")
+    print(f"Total warnings: {warnings_count}")
+    print("Breakdown of warnings:")
+    print(f" Names with parentheses: {name_parentheses_count}")
+    print(f" Sentences shorter than 4 tokens: {short_sentence_count}")
+    print(f" Sentences containing English: {english_count}")
+    print(f" Sentences with no Hebrew or English letters: {no_letters_count}")
+    print(f" Sentences with multiple sequential dashes: {multi_dash_count}")
