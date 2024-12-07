@@ -349,6 +349,22 @@ for i in range(len(filenames)):
     curr_speaker=""
     curr_speaker_text=""
     print ("\n"+"-"*30+"\n")
+<<<<<<< HEAD
+=======
+
+print(f'total {sent_count} sentences counted\n number of sentences of size 3,2,1:\n{sum(1 for s in tot_sent if len(s.split(" ")) < 4)}')
+
+print(f'five shortest sentences: \n')
+for i,x in enumerate(sorted(tot_sent,key=len)[:100]):
+    print(i,x)
+    print(tot_sent[x],"\n")
+print("--"*40)
+print(f'five longest sentences: \n')
+for x in sorted(tot_sent,key=len)[-5:]:
+    print(x)
+    print(tot_sent[x],"\n")
+print("--"*40)
+>>>>>>> 41f88f67b9911d2fde1fe185fc4ec528e4fe5a46
 
 print(f'total {sent_count} sentences counted\n number of sentences of size 3,2,1:\n{sum(1 for s in tot_sent if len(s.split(" ")) < 4)}')
 
