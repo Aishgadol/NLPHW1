@@ -4,7 +4,7 @@ import json
 from docx import Document
 
 #list of lines that are prefixes/suffixes that are not needed and only intrupt
-INVALID_LINES = [
+bad_lines = [
     'מנהל הוועדה:', 'רשמת פרלמנטרית:', 'מוזמנים באמצעים מקוונים:', 'חברי כנסת:', 'יועצת משפטית:',
     'מנהל/ת הוועדה:', 'חברי הוועדה:', 'חברי הכנסת:', 'משתתפים באמצעים מקוונים:', 'מנהלת הוועדה:',
     'סדר היום:', 'משתתפים (באמצעים מקוונים):', 'רישום פרלמנטרי:',
@@ -15,20 +15,20 @@ INVALID_LINES = [
 ]
 
 
-HEB_LETTERS = list("אבגדהוזחטיכלמנסעפצקרשתץףךםן")
-ENG_LETTERS = list("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+hebrew_abc_list = list("אבגדהוזחטיכלמנסעפצקרשתץףךםן")
+english_abc = list("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
 
 #common patterns like date, acronyms, splitting patterns
-DATE_PATTERNS = [
+date_regexes = [
     r"\d{1,2}/\d{1,2}(?:/\d{2,4})",
     r"\d{1,2}\.\d{1,2}(?:\.\d{2,4})"
 ]
-TIME_PATTERN = r"\b(?:[0-1]?\d|2[0-3]):[0-5]\d\b"
-ACRONYM_PATTERN = r'\w+"\w+'
-NUMBER_PATTERN = r'(\d)+(,\d{3})*(\.\d+)?(%|$)?'
-TOKEN_SPLIT_PATTERN = r"([^א-ת0-9'])"
+time_regex = r"\b(?:[0-1]?\d|2[0-3]):[0-5]\d\b"
+acronyms_regex = r'\w+"\w+'
+numbers_regex = r'(\d)+(,\d{3})*(\.\d+)?(%|$)?'
+regex_for_tokenization = r"([^א-ת0-9'])"
 
-HEBREW_ABC = list("אבגדהוזחטיכלמנסעפצקרשתץףךםן")
+hebrew_abc_list = list("אבגדהוזחטיכלמנסעפצקרשתץףךםן")
 
 def hebrew_words_to_number(text):
     units = {
@@ -103,6 +103,28 @@ def hebrew_words_to_number(text):
         i += 1
     return total if total > 0 else -1
 
+
+def sentence_splitter(text):
+    #this splits the sentence
+    endings = ['.', '!', '?', '\n', ';']
+    sentences = []
+    start_index = 0
+    for i, c in enumerate(text):
+        if c in endings:
+            if start_index != i:
+                # dont split on floating point numbers like 69.42
+                if c == '.' and i + 1 < len(text) and text[i+1].isdigit():
+                    continue
+                # next char should be space/Hebrew/newline
+                if i + 1 < len(text) and text[i+1] not in hebrew_abc_list + [' ', '\n']:
+                    continue
+                candidate = text[start_index:i + 1].strip()
+                if check_valid_sentence(candidate):
+                    tokenized = split_sentence_to_tokens(candidate)
+                    if len(tokenized) >= 4:
+                        sentences.append(" ".join(tokenized))
+            start_index = i + 1
+    return sentences
 def extract_protocol_number(doc, protocol_type):
     if protocol_type == "committee":
         for para in doc.paragraphs:
@@ -124,7 +146,7 @@ def extract_protocol_number(doc, protocol_type):
 
 def is_line_excludable(text):
     #check if line is in our list of known irrelevant lines
-    return any(invalid in text for invalid in INVALID_LINES)
+    return any(invalid in text for invalid in bad_lines)
 
 #check the style of paragraph (bold or underlined)
 def check_underline(para):
@@ -192,8 +214,8 @@ def check_valid_sentence(sentence):
     # check the sentence: must have hebrew chars, no english chars , and no " --- " patterns
     if re.search(r"((-|–)\s*){2}", sentence):
         return False
-    contains_hebrew = any(char in HEB_LETTERS for char in sentence)
-    contains_english = any(char in ENG_LETTERS for char in sentence)
+    contains_hebrew = any(char in hebrew_abc_list for char in sentence)
+    contains_english = any(char in english_abc for char in sentence)
     return contains_hebrew and not contains_english
 
 def split_sentence_to_tokens(sentence_text):
@@ -203,40 +225,19 @@ def split_sentence_to_tokens(sentence_text):
         if not word:
             return []
         # check for known patterns in text and split them if found
-        for patterns in [DATE_PATTERNS, [TIME_PATTERN], [NUMBER_PATTERN], [ACRONYM_PATTERN]]:
+        for patterns in [date_regexes, [time_regex], [numbers_regex], [acronyms_regex]]:
             for pattern in patterns:
                 m = re.search(pattern, word)
                 if m:
                     return split_word(word[:m.start()]) + [m.group()] + split_word(word[m.end():])
-        # if not found then split by TOKEN_SPLIT_PATTERN for punctuation
-        return [p for p in re.split(TOKEN_SPLIT_PATTERN, word) if p]
+        # if not found then split by regex_for_tokenization for punctuation
+        return [p for p in re.split(regex_for_tokenization, word) if p]
 
     for w in sentence_text.split():
         tokens.extend(split_word(w))
     tokens = [t.strip() for t in tokens if t.strip()]
     return tokens
 
-def sentence_splitter(text):
-    #this splits the sentence
-    endings = ['.', '!', '?', '\n', ';']
-    sentences = []
-    start_index = 0
-    for i, c in enumerate(text):
-        if c in endings:
-            if start_index != i:
-                # dont split on floating point numbers like 69.42
-                if c == '.' and i + 1 < len(text) and text[i+1].isdigit():
-                    continue
-                # next char should be space/Hebrew/newline
-                if i + 1 < len(text) and text[i+1] not in HEB_LETTERS + [' ', '\n']:
-                    continue
-                candidate = text[start_index:i + 1].strip()
-                if check_valid_sentence(candidate):
-                    tokenized = split_sentence_to_tokens(candidate)
-                    if len(tokenized) >= 4:
-                        sentences.append(" ".join(tokenized))
-            start_index = i + 1
-    return sentences
 
 def extract_type_from_filename(file_name):
     # find kneset num and protocol type from filename
@@ -270,6 +271,7 @@ def process_document(doc_path, protocol_type):
         for s in sentence_splitter(current_text):
             results.append((speaker_clean, s))
     return number_protocol, results
+
 
 if __name__ == "__main__":
     folder_with_files_path = "TextFiles"
